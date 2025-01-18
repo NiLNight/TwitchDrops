@@ -1,4 +1,4 @@
-from django.core.validators import FileExtensionValidator
+from django.core.validators import FileExtensionValidator, MinValueValidator, MaxValueValidator, RegexValidator
 from django.db import models
 from django.contrib.auth.models import User
 from mptt.models import MPTTModel, TreeForeignKey
@@ -6,7 +6,12 @@ from mptt.models import MPTTModel, TreeForeignKey
 
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    phone = models.CharField(max_length=20)
+    phone = models.CharField(
+        max_length=20,
+        validators=[RegexValidator(
+            r'^\+?1?\d{9,15}$',
+            message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed.")]
+    )
     birth_date = models.DateField(null=True, blank=True)
     avatar = models.ImageField(
         verbose_name='Аватар',
@@ -17,12 +22,9 @@ class UserProfile(models.Model):
 
 
 class Category(MPTTModel):
-    """
-    Модель категорий с вложенностью
-    """
     title = models.CharField(max_length=255, verbose_name='Название категории')
-    slug = models.SlugField(verbose_name='URL категории', max_length=255, blank=True)
-    description = models.TextField(verbose_name='Описание категории', max_length=300)
+    slug = models.SlugField(verbose_name='URL категории', max_length=255, blank=True, unique=True)
+    description = models.TextField(verbose_name='Описание категории')
     parent = TreeForeignKey(
         'self',
         on_delete=models.CASCADE,
@@ -49,7 +51,7 @@ class Product(models.Model):
     slug = models.SlugField(max_length=255, blank=True)
     description = models.TextField()
     price = models.DecimalField(default=0.00, max_digits=10, decimal_places=2)
-    discount = models.DecimalField(default=0.00, max_digits=4, decimal_places=2)
+    discount = models.DecimalField(default=0.00, max_digits=4, decimal_places=2, null=True, blank=True)
     category = TreeForeignKey('Category', related_name='products', on_delete=models.CASCADE)
     thumbnail = models.ImageField(default='default.jpg',
                                   verbose_name='Изображение товара',
@@ -59,7 +61,7 @@ class Product(models.Model):
                                       FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png', 'gif', 'webp'])])
     created = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)
-    status = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
 
     def __str__(self):
@@ -69,39 +71,46 @@ class Product(models.Model):
 class Cart(models.Model):
     user = models.ForeignKey(User, related_name='cart', on_delete=models.CASCADE, null=True, blank=True)
     created = models.DateTimeField(auto_now_add=True)
-    session_key = models.CharField(max_length=32, null=True, blank=True)
+    session_key = models.CharField(max_length=32, null=True, blank=True, unique=True)
 
 
 class CartItem(models.Model):
     cart = models.ForeignKey(Cart, on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    quantity = models.PositiveSmallIntegerField(default=0)
+    quantity = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1)])
 
 
 class Wishlist(models.Model):
     user = models.ForeignKey(User, related_name='wishlist', on_delete=models.CASCADE, null=True, blank=True)
     products = models.ManyToManyField(Product)
-    session_key = models.CharField(max_length=32, null=True, blank=True)
+    session_key = models.CharField(max_length=32, null=True, blank=True, unique=True)
 
 
 class Order(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('shipped', 'Shipped'),
+        ('delivered', 'Delivered'),
+        ('cancelled', 'Cancelled'),
+    ]
     user = models.ForeignKey(User, related_name='orders', on_delete=models.CASCADE)
     products = models.ManyToManyField(Product, through='OrderItem')
     order_date = models.DateTimeField(auto_now_add=True)
-    status = models.CharField(max_length=50)
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES)
 
 
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    quantity = models.IntegerField()
+    quantity = models.IntegerField(validators=[MinValueValidator(1)])
     price = models.DecimalField(max_digits=10, decimal_places=2)
 
 
 class Review(models.Model):
     user = models.ForeignKey(User, related_name='reviews', on_delete=models.CASCADE)
     product = models.ForeignKey(Product, related_name='reviews', on_delete=models.CASCADE)
-    rating = models.PositiveSmallIntegerField()
+    rating = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
     comment = models.CharField(max_length=255)
     review_date = models.DateTimeField(auto_now_add=True)
 
@@ -116,7 +125,7 @@ class Rating(models.Model):
 
 class Requisites(models.Model):
     user = models.ForeignKey(User, related_name='requisites', on_delete=models.CASCADE)
-    number = models.PositiveSmallIntegerField()
+    number = models.PositiveSmallIntegerField(validators=[MinValueValidator(1)])
 
 
 class Delivery(models.Model):
@@ -125,8 +134,13 @@ class Delivery(models.Model):
 
 
 class Payment(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
     order = models.ForeignKey(Order, related_name='payments', on_delete=models.CASCADE)
     payment_date = models.DateTimeField(auto_now_add=True)
-    status = models.CharField(max_length=50)
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES)
     requisite = models.ForeignKey(Requisites, related_name='payments', on_delete=models.CASCADE)
     address = models.ForeignKey(Delivery, related_name='payments', on_delete=models.CASCADE)
