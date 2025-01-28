@@ -1,7 +1,8 @@
-from django.core.validators import FileExtensionValidator, MinValueValidator, MaxValueValidator, RegexValidator
+
 from django.db import models
 from django.contrib.auth.models import User
 from mptt.models import MPTTModel, TreeForeignKey
+from django.core.validators import FileExtensionValidator, MinValueValidator, MaxValueValidator, RegexValidator
 
 
 class UserProfile(models.Model):
@@ -52,6 +53,7 @@ class Product(models.Model):
     description = models.TextField()
     price = models.DecimalField(default=0.00, max_digits=10, decimal_places=2)
     discount = models.DecimalField(default=0.00, max_digits=4, decimal_places=2, null=True, blank=True)
+    stock = models.PositiveIntegerField(default=0)
     category = TreeForeignKey('Category', related_name='products', on_delete=models.CASCADE)
     thumbnail = models.ImageField(default='default.jpg',
                                   verbose_name='Изображение товара',
@@ -66,18 +68,6 @@ class Product(models.Model):
 
     def __str__(self):
         return self.name
-
-
-class Cart(models.Model):
-    user = models.ForeignKey(User, related_name='cart', on_delete=models.CASCADE, null=True, blank=True)
-    created = models.DateTimeField(auto_now_add=True)
-    session_key = models.CharField(max_length=32, null=True, blank=True, unique=True)
-
-
-class CartItem(models.Model):
-    cart = models.ForeignKey(Cart, on_delete=models.CASCADE)
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    quantity = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1)])
 
 
 class Wishlist(models.Model):
@@ -101,10 +91,10 @@ class Order(models.Model):
 
 
 class OrderItem(models.Model):
-    order = models.ForeignKey(Order, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, related_name='order_items', on_delete=models.CASCADE)
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, null=True, blank=True)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.IntegerField(validators=[MinValueValidator(1)])
-    price = models.DecimalField(max_digits=10, decimal_places=2)
 
 
 class Review(models.Model):
